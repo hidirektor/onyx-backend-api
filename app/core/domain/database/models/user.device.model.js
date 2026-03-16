@@ -7,21 +7,21 @@ const { getEnumValues } = require('@core/domain/enums');
 module.exports = (sequelize) => {
   class UserDevice extends BaseModel {
     static associate(db) {
-      UserDevice.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'id' });
+      UserDevice.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'userId', as: 'user' });
     }
   }
 
   UserDevice.init(
     {
-      id: {
-        type: DataTypes.BIGINT.UNSIGNED,
+      userDeviceId: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-        autoIncrement: true,
       },
       userId: {
-        type: DataTypes.BIGINT.UNSIGNED,
+        type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.id',
+        comment: 'FK → users.userId',
       },
       deviceFingerprint: {
         type: DataTypes.STRING(255),
@@ -133,9 +133,9 @@ module.exports = (sequelize) => {
       tableName: 'user_devices',
       timestamps: false,
       indexes: [
-        { name: 'idx_user_device_unique', unique: true, fields: ['userId', 'deviceFingerprint'] },
-        { name: 'idx_user_device_login', fields: ['userId', 'lastLoginAt'] },
-        { name: 'idx_device_fingerprint', fields: ['deviceFingerprint'] },
+        { name: 'idx_user_device_unique',  unique: true, fields: ['userId', 'deviceFingerprint'] },
+        { name: 'idx_user_device_login',   fields: ['userId', 'lastLoginAt'] },
+        { name: 'idx_device_fingerprint',  fields: ['deviceFingerprint'] },
         { name: 'idx_user_devices_active', fields: ['userId', 'isActive', 'lastLoginAt'] },
       ],
     }

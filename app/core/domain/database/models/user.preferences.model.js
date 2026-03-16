@@ -6,25 +6,27 @@ const { getEnumValues, getEnumDefault } = require('@core/domain/enums');
 
 module.exports = (sequelize) => {
   class UserPreferences extends BaseModel {
-    static get hiddenFields() { return ['pinCode']; }
+    static get hiddenFields() {
+      return ['pinCode'];
+    }
 
     static associate(db) {
-      UserPreferences.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'id' });
+      UserPreferences.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'userId', as: 'user' });
     }
   }
 
   UserPreferences.init(
     {
-      id: {
-        type: DataTypes.BIGINT.UNSIGNED,
+      userPreferencesId: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-        autoIncrement: true,
       },
       userId: {
-        type: DataTypes.BIGINT.UNSIGNED,
+        type: DataTypes.UUID,
         allowNull: false,
         unique: true,
-        comment: 'FK → users.id',
+        comment: 'FK → users.userId',
       },
       defaultLanguage: {
         type: DataTypes.ENUM(...getEnumValues('user.preferences.languages')),

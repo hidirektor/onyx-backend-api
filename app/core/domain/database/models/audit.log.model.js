@@ -7,16 +7,16 @@ const { getEnumValues, getEnumDefault } = require('@core/domain/enums');
 module.exports = (sequelize) => {
   class AuditLog extends BaseModel {
     static associate(db) {
-      AuditLog.belongsTo(db.User, { foreignKey: 'performedBy', targetKey: 'id', as: 'actor' });
+      AuditLog.belongsTo(db.User, { foreignKey: 'performedBy', targetKey: 'userId', as: 'actor' });
     }
   }
 
   AuditLog.init(
     {
-      id: {
-        type: DataTypes.BIGINT.UNSIGNED,
+      auditLogId: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-        autoIncrement: true,
       },
       operationType: {
         type: DataTypes.ENUM(...getEnumValues('audit.operationTypes')),
@@ -31,9 +31,9 @@ module.exports = (sequelize) => {
         comment: 'System section affected by the operation',
       },
       performedBy: {
-        type: DataTypes.BIGINT.UNSIGNED,
+        type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.id (actor)',
+        comment: 'FK → users.userId (actor)',
       },
       targetResourceId: {
         type: DataTypes.STRING(100),
@@ -73,9 +73,9 @@ module.exports = (sequelize) => {
       tableName: 'audit_logs',
       timestamps: false,
       indexes: [
-        { name: 'idx_audit_logs_actor_time', fields: ['performedBy', 'operationTime'] },
-        { name: 'idx_audit_logs_section', fields: ['operationSection', 'operationTime'] },
-        { name: 'idx_audit_logs_type', fields: ['operationType', 'operationTime'] },
+        { name: 'idx_audit_logs_actor_time',  fields: ['performedBy', 'operationTime'] },
+        { name: 'idx_audit_logs_section',     fields: ['operationSection', 'operationTime'] },
+        { name: 'idx_audit_logs_type',        fields: ['operationType', 'operationTime'] },
       ],
     }
   );

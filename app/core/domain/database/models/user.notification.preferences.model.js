@@ -24,22 +24,22 @@ function jsonSetter(field) {
 module.exports = (sequelize) => {
   class NotificationPreference extends BaseModel {
     static associate(db) {
-      NotificationPreference.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'id' });
+      NotificationPreference.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'userId', as: 'user' });
     }
   }
 
   NotificationPreference.init(
     {
-      id: {
-        type: DataTypes.BIGINT.UNSIGNED,
+      notificationPreferenceId: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-        autoIncrement: true,
       },
       userId: {
-        type: DataTypes.BIGINT.UNSIGNED,
+        type: DataTypes.UUID,
         allowNull: false,
         unique: true,
-        comment: 'FK → users.id',
+        comment: 'FK → users.userId',
       },
       generalNotifications: {
         type: DataTypes.JSON,
@@ -49,29 +49,29 @@ module.exports = (sequelize) => {
         get: jsonGetter('generalNotifications'),
         set: jsonSetter('generalNotifications'),
       },
-      rollCallNotifications: {
+      systemNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: 'Roll-call notification preferences',
-        get: jsonGetter('rollCallNotifications'),
-        set: jsonSetter('rollCallNotifications'),
+        comment: 'System / security notification preferences',
+        get: jsonGetter('systemNotifications'),
+        set: jsonSetter('systemNotifications'),
       },
       announcementNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: 'Announcement (duyuru) notification preferences',
+        comment: 'Announcement notification preferences',
         get: jsonGetter('announcementNotifications'),
         set: jsonSetter('announcementNotifications'),
       },
-      newsNotifications: {
+      supportNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: 'News (haberler) notification preferences',
-        get: jsonGetter('newsNotifications'),
-        set: jsonSetter('newsNotifications'),
+        comment: 'Support ticket notification preferences',
+        get: jsonGetter('supportNotifications'),
+        set: jsonSetter('supportNotifications'),
       },
     },
     {
