@@ -1,6 +1,7 @@
 'use strict';
 
 const RabbitMQClient = require('@core/infrastructure/RabbitMQClient');
+const rabbitConfig   = require('@infrastructure/setup/configs/rabbitmq.config');
 const PushProvider = require('./providers/PushProvider');
 const InAppProvider = require('./providers/InAppProvider');
 const MailProvider = require('./providers/MailProvider');
@@ -73,7 +74,20 @@ class NotificationEngine {
       throw new Error(`[NotificationEngine] Unknown channel: "${channel}"`);
     }
 
-    await RabbitMQClient.publish('notifications', `notification.${channel}`, {
+    const exchangeMap = {
+      [CHANNELS.MAIL]:   rabbitConfig.exchanges.emails,
+      [CHANNELS.SMS]:    rabbitConfig.exchanges.sms,
+      [CHANNELS.PUSH]:   rabbitConfig.exchanges.push,
+      [CHANNELS.IN_APP]: rabbitConfig.exchanges.inApp,
+    };
+    const routingKeyMap = {
+      [CHANNELS.MAIL]:   rabbitConfig.routingKeys.notificationMail,
+      [CHANNELS.SMS]:    rabbitConfig.routingKeys.notificationSms,
+      [CHANNELS.PUSH]:   rabbitConfig.routingKeys.notificationPush,
+      [CHANNELS.IN_APP]: rabbitConfig.routingKeys.notificationInApp,
+    };
+
+    await RabbitMQClient.publish(exchangeMap[channel], routingKeyMap[channel], {
       channel,
       payload,
       enqueuedAt: new Date().toISOString(),
@@ -100,15 +114,20 @@ class NotificationEngine {
    * Call once at application bootstrap.
    */
   async startConsumer() {
-    for (const channel of Object.values(CHANNELS)) {
-      const queueName = `notification_${channel}_queue`;
+    const consumerMap = [
+      { channel: CHANNELS.MAIL,   queueName: rabbitConfig.queues.notificationMail,  workerType: 'mail'  },
+      { channel: CHANNELS.SMS,    queueName: rabbitConfig.queues.notificationSms,   workerType: 'sms'   },
+      { channel: CHANNELS.PUSH,   queueName: rabbitConfig.queues.notificationPush,  workerType: 'push'  },
+      { channel: CHANNELS.IN_APP, queueName: rabbitConfig.queues.notificationInApp, workerType: 'inApp' },
+    ];
+
+    for (const { channel, queueName, workerType } of consumerMap) {
       await RabbitMQClient.consume(
-        'notifications',
-        `notification.${channel}`,
         queueName,
+        workerType,
         async ({ payload }) => this.send(channel, payload)
       );
-      logger.info(`[NotificationEngine] Consumer registered: ${queueName}`);
+      logger.info(`[NotificationEngine] Consumer registered: ${queueName} (worker: ${workerType})`);
     }
   }
 }
