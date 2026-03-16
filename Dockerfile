@@ -9,7 +9,12 @@ RUN npm ci --omit=dev
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM node:25-alpine AS runtime
 
+ARG APP_VERSION=1.0.0
 ENV NODE_ENV=production
+ENV APP_VERSION=${APP_VERSION}
+
+LABEL org.opencontainers.image.title="project-onyx-backend-api" \
+      org.opencontainers.image.version="${APP_VERSION}"
 
 WORKDIR /app
 

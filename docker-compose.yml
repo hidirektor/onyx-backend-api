@@ -1,15 +1,20 @@
 services:
 
-  api:
-    build: .
-    container_name: onyx-api
+  project-onyx-backend-api:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-1.0.0}
+    image: project-onyx-backend-api:${APP_VERSION:-1.0.0}
+    container_name: project-onyx-backend-api-${APP_VERSION:-1.0.0}
     restart: unless-stopped
     ports:
       - "${PORT:-2805}:2805"
     env_file: .env
     networks:
-      - onyx_network
+      - backend_network
 
 networks:
-  onyx_network:
-    driver: bridge
+  backend_network:
+    name: "onyx_network"
+    external: true
