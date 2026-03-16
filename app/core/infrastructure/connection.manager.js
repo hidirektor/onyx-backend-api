@@ -27,6 +27,20 @@ class ConnectionManager {
 
   async initializeDatabase() {
     if (this._is('database')) return;
+    const dbConfig = require('@infrastructure/setup/configs/database.config');
+    const mysql2   = require('mysql2/promise');
+
+    // Create database if it does not exist
+    const conn = await mysql2.createConnection({
+      host:     dbConfig.host,
+      port:     dbConfig.port,
+      user:     dbConfig.username,
+      password: dbConfig.password,
+    });
+    await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    await conn.end();
+    console.info(`[ConnectionManager] Database "${dbConfig.database}" ensured`);
+
     const { sequelize } = require('@database/models');
     await sequelize.authenticate();
     console.info('[ConnectionManager] MySQL connected');

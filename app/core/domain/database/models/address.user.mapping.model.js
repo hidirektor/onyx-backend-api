@@ -16,7 +16,7 @@ module.exports = (sequelize) => {
       mappingID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
-        primaryKey: false,
+        primaryKey: true,
         comment: 'Unique identifier for address user mapping',
       },
       addressID: {
