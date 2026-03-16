@@ -1,8 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)"  srcset="readme/logo_onyx_light.png">
-  <source media="(prefers-color-scheme: light)" srcset="readme/logo_onyx_dark.png">
-  <img alt="Onyx Logo" src="readme/logo_onyx_dark.png" height="72">
-</picture>
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)"  srcset="readme/logo_onyx_light.png">
+    <source media="(prefers-color-scheme: light)" srcset="readme/logo_onyx_dark.png">
+    <img alt="Onyx Logo" src="readme/logo_onyx_dark.png" height="288">
+  </picture>
+</div>
 
 # Onyx Backend API
 
