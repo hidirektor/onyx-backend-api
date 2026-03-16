@@ -27,7 +27,6 @@ const AuthModule = require('@modules/auth/AuthModule');
 // ─── Middleware ────────────────────────────────────────────────────────────────
 const loggerMiddleware     = require('@infrastructure/setup/middleware/logger.middleware');
 const errorMiddleware      = require('@infrastructure/setup/middleware/error.middleware');
-const geoProtection        = require('@infrastructure/setup/middleware/geo-protection.middleware');
 const deviceTypeMiddleware = require('@infrastructure/setup/middleware/device-type.middleware');
 const languageMiddleware   = require('@infrastructure/setup/middleware/language.middleware');
 
@@ -46,8 +45,7 @@ async function bootstrap() {
   app.use(loggerMiddleware);
   app.use('/public', express.static(path.join(__dirname, 'app/shared/public')));
 
-  // 1a. Security & protocol headers (applied globally, before any route)
-  app.use(geoProtection);        // VPN/proxy + country whitelist/blacklist
+  // 1a. Protocol headers (applied globally, before any route)
   app.use(deviceTypeMiddleware); // X-Device-Type: required (web | mobile | agent)
   app.use(languageMiddleware);   // X-Accept-Language: optional (en | tr | auto)
 

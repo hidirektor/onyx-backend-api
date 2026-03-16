@@ -34,8 +34,6 @@ const REQUIRED_VARS = [
   // MinIO
   'MINIO_ENDPOINT',
   'MINIO_PORT',
-  'MINIO_ACCESS_KEY',
-  'MINIO_SECRET_KEY',
   'MINIO_BUCKET_NAME',
 
   // Mail
@@ -53,6 +51,13 @@ function validateEnv() {
     const val = process.env[key];
     return val === undefined || val === null || val.trim() === '';
   });
+
+  // MinIO credentials: accept either new (MINIO_USERNAME/MINIO_PASSWORD) or legacy (MINIO_ACCESS_KEY/MINIO_SECRET_KEY) format
+  const hasNewMinIOCreds    = process.env.MINIO_USERNAME?.trim()   && process.env.MINIO_PASSWORD?.trim();
+  const hasLegacyMinIOCreds = process.env.MINIO_ACCESS_KEY?.trim() && process.env.MINIO_SECRET_KEY?.trim();
+  if (!hasNewMinIOCreds && !hasLegacyMinIOCreds) {
+    missing.push('MINIO_USERNAME + MINIO_PASSWORD (or MINIO_ACCESS_KEY + MINIO_SECRET_KEY)');
+  }
 
   if (missing.length === 0) return;
 

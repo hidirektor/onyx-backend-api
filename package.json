@@ -30,7 +30,6 @@
     "ejs": "^5.0.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.1",
-    "geoip-lite": "^2.0.0",
     "http-status-codes": "^2.3.0",
     "ioredis": "^5.10.0",
     "joi": "^18.0.2",
@@ -59,7 +58,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/*.test.js"],
+    "testMatch": [
+      "**/*.test.js"
+    ],
     "moduleNameMapper": {
       "^@core/(.*)$": "<rootDir>/app/core/$1",
       "^@infrastructure/(.*)$": "<rootDir>/app/core/infrastructure/$1",
