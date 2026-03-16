@@ -128,8 +128,9 @@ class MigrationService {
           });
         } else {
           // Type mismatch detection
+          // Use type.key to avoid calling toSql() on unbound ENUM types (dialect not yet attached)
           const liveType = liveColumns[attrName].type?.toUpperCase?.() || '';
-          const modelType = attrDef.type?.toString?.()?.toUpperCase?.() || '';
+          const modelType = (attrDef.type?.key || attrDef.type?.toString?.() || '').toUpperCase();
           const liveBase = liveType.split('(')[0];
           const modelBase = modelType.split('(')[0];
 
