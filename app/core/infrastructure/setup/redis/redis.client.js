@@ -1,7 +1,7 @@
 'use strict';
 
-const Redis = require('ioredis');
-const redisConfig = require('@infrastructure/setup/configs/redis.config');
+const Redis       = require('ioredis');
+const redisConfig = require('./redis.config');
 
 const isDevelopment = process.env.NODE_ENV === 'development';
 
@@ -28,14 +28,14 @@ class RedisClient {
   /**
    * Initialize the publisher connection, test with a ping, and return the client.
    * Safe to call multiple times - returns existing client if healthy.
-   * @returns {Promise<Redis>}
+   * @returns {Promise<Redis|null>}
    */
   static async initialize() {
     if (publisherInstance) return publisherInstance;
 
     if (!redisConfig.host || !redisConfig.port) {
       if (isDevelopment) {
-        console.warn('[Redis] Not configured - skipping in development mode');
+        console.warn('[Redis] Not configured — skipping in development mode');
         return null;
       }
       throw new Error('[Redis] REDIS_HOST and REDIS_PORT are required');
@@ -44,8 +44,8 @@ class RedisClient {
     try {
       publisherInstance = new Redis(redisConfig);
 
-      publisherInstance.on('connect',  () => console.info('[Redis] Publisher connected'));
-      publisherInstance.on('close',    () => console.warn('[Redis] Publisher connection closed'));
+      publisherInstance.on('connect', () => console.info('[Redis] Publisher connected'));
+      publisherInstance.on('close',   () => console.warn('[Redis] Publisher connection closed'));
       publisherInstance.on('error', (err) => {
         if (errorLogged) return;
         errorLogged = true;
@@ -55,9 +55,7 @@ class RedisClient {
       });
 
       // Connect explicitly (lazyConnect: true)
-      if (typeof publisherInstance.connect === 'function') {
-        await publisherInstance.connect();
-      }
+      await publisherInstance.connect();
 
       // Ping with timeout
       const pingPromise    = publisherInstance.ping();
@@ -71,7 +69,7 @@ class RedisClient {
     } catch (err) {
       publisherInstance = null;
       if (isDevelopment) {
-        console.warn('[Redis] Initialization failed in development mode - continuing without Redis:', err.message);
+        console.warn('[Redis] Initialization failed in development mode — continuing without Redis:', err.message);
         return null;
       }
       throw new Error(`[Redis] Initialization failed: ${err.message}`);
@@ -104,9 +102,7 @@ class RedisClient {
   static async ping() {
     const client = RedisClient.getInstance();
     if (!client) return null;
-    const result = await client.ping();
-    console.info('[Redis] Ping:', result);
-    return result;
+    return client.ping();
   }
 
   /**

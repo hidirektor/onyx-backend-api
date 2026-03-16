@@ -1,7 +1,7 @@
 'use strict';
 
-const RabbitMQClient = require('@core/infrastructure/RabbitMQClient');
-const rabbitConfig   = require('@infrastructure/setup/configs/rabbitmq.config');
+const RabbitMQClient = require('@core/infrastructure/setup/rabbitmq/rabbitmq.client');
+const rabbitConfig   = require('@infrastructure/setup/rabbitmq/rabbitmq.config');
 const PushProvider = require('./providers/PushProvider');
 const InAppProvider = require('./providers/InAppProvider');
 const MailProvider = require('./providers/MailProvider');

@@ -1,7 +1,7 @@
 'use strict';
 
 const nodemailer = require('nodemailer');
-const mailConfig = require('@infrastructure/setup/configs/mail.config');
+const mailConfig = require('@infrastructure/configs/mail.config');
 const logger = require('@shared/utils/logger');
 
 /**

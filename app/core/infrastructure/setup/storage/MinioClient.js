@@ -1,9 +1,12 @@
 'use strict';
 
 const Minio = require('minio');
-const minioConfig = require('@infrastructure/setup/configs/minio.config');
+const minioConfig = require('@infrastructure/configs/minio.config');
 
-let instance = null;
+// S3/MinIO error codes that indicate the object simply doesn't exist
+const NOT_FOUND_CODES = new Set(['NotFound', 'NoSuchKey', 'NoSuchBucket']);
+
+let instance      = null;
 let currentConfig = null;
 
 /**
@@ -20,7 +23,7 @@ let currentConfig = null;
 class MinioClient {
   /**
    * Initialize the MinIO client and verify connection.
-   * Automatically retries without SSL if initial connection fails with an SSL error.
+   * Automatically retries without SSL if initial connection fails with an SSL/TLS error.
    * Safe to call multiple times - returns existing client if already initialized.
    * @returns {Promise<import('minio').Client>}
    */
@@ -32,27 +35,27 @@ class MinioClient {
     }
 
     currentConfig = { ...minioConfig };
-    instance = new Minio.Client(currentConfig);
+    instance      = new Minio.Client(currentConfig);
 
     try {
       await MinioClient._testConnection();
       console.info('[MinIO] Client initialized');
     } catch (err) {
-      // SSL fallback: if connection fails due to SSL/TLS, retry without SSL
-      if (err.message && (err.message.includes('SSL') || err.message.includes('EPROTO'))) {
-        console.warn('[MinIO] SSL connection failed - retrying without SSL');
+      const isSslError = err.message && (err.message.includes('SSL') || err.message.includes('EPROTO'));
+      if (isSslError) {
+        console.warn('[MinIO] SSL connection failed — retrying without SSL');
         currentConfig = { ...currentConfig, useSSL: false };
-        instance = new Minio.Client(currentConfig);
+        instance      = new Minio.Client(currentConfig);
         try {
           await MinioClient._testConnection();
           console.info('[MinIO] Client initialized (no SSL)');
         } catch (retryErr) {
-          instance = null;
+          instance      = null;
           currentConfig = null;
           throw new Error(`[MinIO] Connection failed even without SSL: ${retryErr.message}`);
         }
       } else {
-        instance = null;
+        instance      = null;
         currentConfig = null;
         throw new Error(`[MinIO] Connection failed: ${err.message}`);
       }
@@ -70,12 +73,11 @@ class MinioClient {
 
   /**
    * @returns {import('minio').Client}
+   * @throws {Error} if not initialized — call MinioClient.initialize() first.
    */
   static getInstance() {
     if (!instance) {
-      // Fallback lazy initialization (no connection test)
-      instance = new Minio.Client(minioConfig);
-      console.info('[MinIO] Client initialized (lazy)');
+      throw new Error('[MinIO] Client not initialized. Call MinioClient.initialize() first.');
     }
     return instance;
   }
@@ -155,6 +157,7 @@ class MinioClient {
 
   /**
    * Check if an object exists.
+   * Only returns false for genuine "not found" errors. Other errors (network, auth) are re-thrown.
    * @param {string} bucketName
    * @param {string} objectName
    * @returns {Promise<boolean>}
@@ -163,8 +166,11 @@ class MinioClient {
     try {
       await MinioClient.getInstance().statObject(bucketName, objectName);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (NOT_FOUND_CODES.has(err.code) || err.message === 'Not Found') {
+        return false;
+      }
+      throw err; // propagate unexpected errors (auth, network, etc.)
     }
   }
 
@@ -174,7 +180,8 @@ class MinioClient {
    */
   static async healthCheck() {
     try {
-      const buckets = await MinioClient.getInstance().listBuckets();
+      const client  = MinioClient.getInstance();
+      const buckets = await client.listBuckets();
       return { status: 'healthy', service: 'minio', buckets: buckets.length };
     } catch (err) {
       return { status: 'unhealthy', service: 'minio', error: err.message };

@@ -22,6 +22,7 @@ module.exports = {
     sms:           'onyx.sms',
     push:          'onyx.push',
     inApp:         'onyx.in_app',
+    dlx:           'onyx.dlx', // dead-letter exchange
   },
 
   queues: {
@@ -41,14 +42,19 @@ module.exports = {
     notificationSms:   'notification.sms',
     notificationPush:  'notification.push',
     notificationInApp: 'notification.in_app',
+    // DLQ routing keys (used when dead-lettering from main queues → onyx.dlx)
+    dlqMail:           'dlq.mail',
+    dlqSms:            'dlq.sms',
+    dlqPush:           'dlq.push',
+    dlqInApp:          'dlq.in_app',
   },
 
+  // Base queue options — DLX arguments are set per-queue in setupInfrastructure
   queueOptions: {
     durable:    true,
     autoDelete: false,
     arguments: {
-      'x-message-ttl':    3600000, // 1 hour
-      'x-dead-letter-exchange': '',
+      'x-message-ttl': 3600000, // 1 hour
     },
   },
 

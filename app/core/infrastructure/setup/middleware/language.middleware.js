@@ -1,7 +1,8 @@
 'use strict';
 
-const VALID_LANGS = ['en', 'tr', 'auto'];
+const logger = require('@shared/utils/logger');
 
+const VALID_LANGS = ['en', 'tr', 'auto'];
 const LANGUAGE_MAP = { ENGLISH: 'en', TURKISH: 'tr' };
 
 /**
@@ -39,7 +40,11 @@ module.exports = async (req, res, next) => {
     const userId = req.user.id || req.user.userId;
     const prefs  = await UserPreferences.findOne({ where: { userId }, attributes: ['defaultLanguage'] });
     req.locale   = prefs?.defaultLanguage ? (LANGUAGE_MAP[prefs.defaultLanguage] || 'en') : 'en';
-  } catch {
+  } catch (err) {
+    logger.warn('[language.middleware] Failed to resolve user language preference, defaulting to en', {
+      userId: req.user?.id || req.user?.userId,
+      error:  err.message,
+    });
     req.locale = 'en';
   }
 

@@ -3,7 +3,7 @@
 const { Sequelize } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
-const dbConfig = require('@infrastructure/setup/configs/database.config');
+const dbConfig = require('@infrastructure/configs/database.config');
 
 const sequelize = new Sequelize(
   dbConfig.database,

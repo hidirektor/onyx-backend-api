@@ -1,8 +1,9 @@
 'use strict';
 
-const { Server } = require('socket.io');
+const { Server }       = require('socket.io');
 const { createAdapter } = require('@socket.io/redis-adapter');
-const RedisClient = require('./RedisClient');
+const RedisClient      = require('../redis/redis.client');
+const wsConfig         = require('./websocket.config');
 
 let io = null;
 
@@ -23,26 +24,27 @@ class WebSocketServer {
   /**
    * Initialize the Socket.IO server. Must be called once at bootstrap.
    * @param {import('http').Server} httpServer
-   * @param {object} [options] - Socket.IO server options
+   * @param {object} [options] - Socket.IO server options (merged with wsConfig)
    * @returns {import('socket.io').Server}
    */
   static initialize(httpServer, options = {}) {
     if (io) return io;
 
-    const pubClient = RedisClient.getInstance();
-    const subClient = RedisClient.getSubscriber();
-
     io = new Server(httpServer, {
-      cors: {
-        origin: process.env.CORS_ORIGIN || '*',
-        methods: ['GET', 'POST'],
-      },
-      transports: ['websocket', 'polling'],
+      ...wsConfig,
       ...options,
     });
 
-    io.adapter(createAdapter(pubClient, subClient));
-    console.info('[WebSocket] Server initialized with Redis adapter');
+    // Attach Redis adapter only when Redis is available
+    const pubClient = RedisClient.getInstance();
+    const subClient = pubClient ? RedisClient.getSubscriber() : null;
+
+    if (pubClient && subClient) {
+      io.adapter(createAdapter(pubClient, subClient));
+      console.info('[WebSocket] Server initialized with Redis adapter');
+    } else {
+      console.warn('[WebSocket] Redis not available — running without Redis adapter (single-node only)');
+    }
 
     io.on('connection', (socket) => {
       console.info(`[WebSocket] Client connected: ${socket.id}`);
@@ -55,11 +57,23 @@ class WebSocketServer {
       }
 
       socket.on('join_room', (room) => {
-        socket.join(room);
+        if (typeof room !== 'string' || room.trim() === '') {
+          socket.emit('error', { message: 'join_room: room must be a non-empty string' });
+          return;
+        }
+        socket.join(room.trim());
       });
 
       socket.on('leave_room', (room) => {
-        socket.leave(room);
+        if (typeof room !== 'string' || room.trim() === '') {
+          socket.emit('error', { message: 'leave_room: room must be a non-empty string' });
+          return;
+        }
+        socket.leave(room.trim());
+      });
+
+      socket.on('error', (err) => {
+        console.error(`[WebSocket] Socket error (${socket.id}):`, err.message);
       });
 
       socket.on('disconnect', (reason) => {
@@ -73,6 +87,7 @@ class WebSocketServer {
   /**
    * Get the initialized Socket.IO server instance.
    * @returns {import('socket.io').Server}
+   * @throws {Error} if not initialized
    */
   static getInstance() {
     if (!io) {
@@ -85,7 +100,7 @@ class WebSocketServer {
    * Emit an event to all clients in a room.
    * @param {string} room - e.g. 'user:42', 'class:101'
    * @param {string} event
-   * @param {*} payload
+   * @param {*}      payload
    */
   static emit(room, event, payload) {
     WebSocketServer.getInstance().to(room).emit(event, payload);
@@ -94,7 +109,7 @@ class WebSocketServer {
   /**
    * Broadcast an event to ALL connected clients.
    * @param {string} event
-   * @param {*} payload
+   * @param {*}      payload
    */
   static broadcast(event, payload) {
     WebSocketServer.getInstance().emit(event, payload);
@@ -105,8 +120,35 @@ class WebSocketServer {
    * @returns {number}
    */
   static getClientCount() {
-    const sockets = WebSocketServer.getInstance().sockets.sockets;
-    return sockets.size;
+    return io ? io.sockets.sockets.size : 0;
+  }
+
+  /**
+   * Health check.
+   * @returns {{ status: string, service: string, clients?: number }}
+   */
+  static getHealth() {
+    if (!io) return { status: 'unavailable', service: 'websocket' };
+    return {
+      status:  'healthy',
+      service: 'websocket',
+      clients: WebSocketServer.getClientCount(),
+    };
+  }
+
+  /**
+   * Gracefully close the Socket.IO server.
+   * @returns {Promise<void>}
+   */
+  static close() {
+    return new Promise((resolve) => {
+      if (!io) return resolve();
+      io.close(() => {
+        io = null;
+        console.info('[WebSocket] Server closed');
+        resolve();
+      });
+    });
   }
 }
 

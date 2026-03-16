@@ -1,21 +1,25 @@
 'use strict';
 
-const amqp = require('amqplib');
-const rabbitConfig = require('@infrastructure/setup/configs/rabbitmq.config');
+const amqp        = require('amqplib');
+const rabbitConfig = require('./rabbitmq.config');
 
-let connection       = null;
-let isConnected      = false;
-const channels       = new Map(); // worker-type → channel
-let publisherChannel = null;      // persistent publisher channel
-let reconnectTimer   = null;
+let connection        = null;
+let isConnected       = false;
+const channels        = new Map(); // workerType → { ch, closed }
+let publisherChannel  = null;
+let publisherClosed   = false;
+let reconnectTimer    = null;
+let reconnectAttempts = 0;
+
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 /**
  * RabbitMQClient - Singleton AMQP connection and multi-channel manager.
  *
  * - One channel per worker type (email, sms, push, inApp) with configurable prefetch.
  * - Separate persistent publisher channel for all outbound messages.
- * - Automatic reconnect on unexpected disconnects.
- * - Infrastructure setup: asserts all exchanges, queues, and dead-letter queues.
+ * - Automatic reconnect on unexpected disconnects (up to MAX_RECONNECT_ATTEMPTS).
+ * - Infrastructure setup: asserts all exchanges, queues, DLX, and dead-letter queues.
  *
  * Usage:
  *   await RabbitMQClient.connect();
@@ -37,14 +41,16 @@ class RabbitMQClient {
         timeout:   rabbitConfig.connection.connectionTimeout,
       });
 
-      isConnected = true;
+      isConnected       = true;
+      reconnectAttempts = 0;
       console.info('[RabbitMQ] Connected');
 
       connection.on('close', () => {
-        console.warn('[RabbitMQ] Connection closed. Attempting reconnect in 5s...');
-        isConnected = false;
-        channels.clear();
+        console.warn('[RabbitMQ] Connection closed. Scheduling reconnect...');
+        isConnected      = false;
         publisherChannel = null;
+        publisherClosed  = false;
+        channels.clear();
         connection = null;
         RabbitMQClient._scheduleReconnect();
       });
@@ -57,6 +63,7 @@ class RabbitMQClient {
       return connection;
     } catch (err) {
       isConnected = false;
+      connection  = null;
       console.error('[RabbitMQ] Connection failed:', err.message);
       RabbitMQClient._scheduleReconnect();
       throw err;
@@ -65,10 +72,19 @@ class RabbitMQClient {
 
   static _scheduleReconnect() {
     if (reconnectTimer) return;
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error(`[RabbitMQ] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+      return;
+    }
+
+    reconnectAttempts++;
+    const delay = Math.min(reconnectAttempts * 1000, 30000);
+    console.warn(`[RabbitMQ] Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
+
     reconnectTimer = setTimeout(async () => {
       reconnectTimer = null;
       try { await RabbitMQClient.connect(); } catch { /* next close will retry */ }
-    }, 5000);
+    }, delay);
   }
 
   /**
@@ -79,13 +95,12 @@ class RabbitMQClient {
   static async getChannel(workerType = 'default') {
     if (!isConnected) await RabbitMQClient.connect();
 
-    if (channels.has(workerType)) {
-      const ch = channels.get(workerType);
-      if (ch && !ch.closed) return ch;
-      channels.delete(workerType);
-    }
+    const existing = channels.get(workerType);
+    if (existing && !existing.closed) return existing.ch;
+    if (existing) channels.delete(workerType);
 
-    const ch = await connection.createChannel();
+    const ch    = await connection.createChannel();
+    const state = { ch, closed: false };
 
     const { performance } = rabbitConfig;
     switch (workerType) {
@@ -98,14 +113,16 @@ class RabbitMQClient {
 
     ch.on('error', (err) => {
       console.error(`[RabbitMQ] Channel error (${workerType}):`, err.message);
+      state.closed = true;
       channels.delete(workerType);
     });
     ch.on('close', () => {
       console.warn(`[RabbitMQ] Channel closed (${workerType})`);
+      state.closed = true;
       channels.delete(workerType);
     });
 
-    channels.set(workerType, ch);
+    channels.set(workerType, state);
     return ch;
   }
 
@@ -114,23 +131,31 @@ class RabbitMQClient {
    * @returns {Promise<import('amqplib').Channel>}
    */
   static async getPublisherChannel() {
-    if (publisherChannel && !publisherChannel.closed) return publisherChannel;
+    if (publisherChannel && !publisherClosed) return publisherChannel;
     if (!isConnected) await RabbitMQClient.connect();
 
     publisherChannel = await connection.createChannel();
+    publisherClosed  = false;
+
     publisherChannel.on('error', (err) => {
       console.error('[RabbitMQ] Publisher channel error:', err.message);
+      publisherClosed  = true;
       publisherChannel = null;
     });
     publisherChannel.on('close', () => {
       console.warn('[RabbitMQ] Publisher channel closed');
+      publisherClosed  = true;
       publisherChannel = null;
     });
+    publisherChannel.on('drain', () => {
+      console.info('[RabbitMQ] Publisher channel drain: back-pressure cleared');
+    });
+
     return publisherChannel;
   }
 
   /**
-   * Assert all exchanges, queues, and dead-letter queues.
+   * Assert all exchanges (including DLX), queues with correct DLX routing, and DLQ queues.
    * Call once after connect() during bootstrap.
    */
   static async setupInfrastructure() {
@@ -140,36 +165,72 @@ class RabbitMQClient {
     try {
       const { exchanges, queues, queueOptions, exchangeOptions, routingKeys } = rabbitConfig;
 
-      // Assert exchanges
+      // Assert all exchanges (including dead-letter exchange)
       for (const exchangeName of Object.values(exchanges)) {
         await setupCh.assertExchange(exchangeName, 'topic', exchangeOptions);
       }
 
-      // Assert main queues and bind to exchanges
-      const queueBindings = {
-        notificationMail:  { exchange: exchanges.emails,  routingKey: routingKeys.notificationMail },
-        notificationSms:   { exchange: exchanges.sms,     routingKey: routingKeys.notificationSms },
-        notificationPush:  { exchange: exchanges.push,    routingKey: routingKeys.notificationPush },
-        notificationInApp: { exchange: exchanges.inApp,   routingKey: routingKeys.notificationInApp },
-      };
+      // Per-queue setup: main queues with per-queue DLX routing
+      const queueBindings = [
+        {
+          key:        'notificationMail',
+          exchange:   exchanges.emails,
+          routingKey: routingKeys.notificationMail,
+          dlqKey:     routingKeys.dlqMail,
+        },
+        {
+          key:        'notificationSms',
+          exchange:   exchanges.sms,
+          routingKey: routingKeys.notificationSms,
+          dlqKey:     routingKeys.dlqSms,
+        },
+        {
+          key:        'notificationPush',
+          exchange:   exchanges.push,
+          routingKey: routingKeys.notificationPush,
+          dlqKey:     routingKeys.dlqPush,
+        },
+        {
+          key:        'notificationInApp',
+          exchange:   exchanges.inApp,
+          routingKey: routingKeys.notificationInApp,
+          dlqKey:     routingKeys.dlqInApp,
+        },
+      ];
 
-      for (const [key, { exchange, routingKey }] of Object.entries(queueBindings)) {
+      for (const { key, exchange, routingKey, dlqKey } of queueBindings) {
         const queueName = queues[key];
-        await setupCh.assertQueue(queueName, queueOptions);
+        const opts = {
+          ...queueOptions,
+          arguments: {
+            ...queueOptions.arguments,
+            'x-dead-letter-exchange':    exchanges.dlx,
+            'x-dead-letter-routing-key': dlqKey,
+          },
+        };
+        await setupCh.assertQueue(queueName, opts);
         await setupCh.bindQueue(queueName, exchange, routingKey);
       }
 
-      // Assert dead-letter queues (durable, no TTL or DLX)
+      // Assert dead-letter queues and bind them to the DLX exchange
+      const dlqBindings = [
+        { key: 'dlqMail',  routingKey: routingKeys.dlqMail },
+        { key: 'dlqSms',   routingKey: routingKeys.dlqSms },
+        { key: 'dlqPush',  routingKey: routingKeys.dlqPush },
+        { key: 'dlqInApp', routingKey: routingKeys.dlqInApp },
+      ];
       const dlqOptions = { durable: true, autoDelete: false };
-      for (const [key, queueName] of Object.entries(queues)) {
-        if (key.startsWith('dlq')) {
-          await setupCh.assertQueue(queueName, dlqOptions);
-        }
+      for (const { key, routingKey } of dlqBindings) {
+        const queueName = queues[key];
+        await setupCh.assertQueue(queueName, dlqOptions);
+        await setupCh.bindQueue(queueName, exchanges.dlx, routingKey);
       }
 
       console.info('[RabbitMQ] Infrastructure ready');
     } finally {
-      await setupCh.close().catch(() => {});
+      await setupCh.close().catch((err) => {
+        console.warn('[RabbitMQ] Setup channel close error:', err.message);
+      });
     }
   }
 
@@ -181,21 +242,20 @@ class RabbitMQClient {
    * @param {object} [options]  - Additional AMQP publish options
    */
   static async publish(exchange, routingKey, message, options = {}) {
-    const ch = await RabbitMQClient.getPublisherChannel();
-    await ch.assertExchange(exchange, 'topic', rabbitConfig.exchangeOptions);
+    const ch     = await RabbitMQClient.getPublisherChannel();
     const buffer = Buffer.from(JSON.stringify(message));
     const result = ch.publish(exchange, routingKey, buffer, {
       ...rabbitConfig.messageOptions,
       timestamp: Math.floor(Date.now() / 1000),
       ...options,
     });
-    if (!result) console.warn(`[RabbitMQ] Back-pressure on exchange "${exchange}"`);
+    if (!result) console.warn(`[RabbitMQ] Back-pressure on exchange "${exchange}" — consider slowing publish rate`);
     return result;
   }
 
   /**
-   * Register a consumer for a queue bound to a topic exchange.
-   * Messages are auto-acked on success, nacked (no requeue) on handler error.
+   * Register a consumer for a queue.
+   * Messages are acked on success, nacked (no requeue → DLQ) on handler error.
    *
    * @param {string}   queueName  - Queue name
    * @param {string}   workerType - Worker type for channel/prefetch selection
@@ -205,9 +265,18 @@ class RabbitMQClient {
     const ch = await RabbitMQClient.getChannel(workerType);
 
     ch.consume(queueName, async (msg) => {
-      if (!msg) return;
+      if (!msg) return; // consumer cancelled
+
+      let content;
       try {
-        const content = JSON.parse(msg.content.toString());
+        content = JSON.parse(msg.content.toString());
+      } catch (parseErr) {
+        console.error(`[RabbitMQ] Malformed JSON on queue "${queueName}":`, parseErr.message);
+        ch.nack(msg, false, false);
+        return;
+      }
+
+      try {
         await handler(content, msg);
         ch.ack(msg);
       } catch (err) {
@@ -226,7 +295,7 @@ class RabbitMQClient {
    * @param {object} [options]
    */
   static async sendToQueue(queueName, message, options = {}) {
-    const ch = await RabbitMQClient.getPublisherChannel();
+    const ch     = await RabbitMQClient.getPublisherChannel();
     const buffer = Buffer.from(JSON.stringify(message));
     return ch.sendToQueue(queueName, buffer, {
       ...rabbitConfig.messageOptions,
@@ -243,7 +312,12 @@ class RabbitMQClient {
     if (!isConnected || !connection) {
       return { status: 'unhealthy', service: 'rabbitmq', error: 'Not connected' };
     }
-    return { status: 'healthy', service: 'rabbitmq', activeChannels: channels.size };
+    return {
+      status:           'healthy',
+      service:          'rabbitmq',
+      activeChannels:   channels.size,
+      reconnectAttempts,
+    };
   }
 
   /**
@@ -255,27 +329,31 @@ class RabbitMQClient {
       reconnectTimer = null;
     }
 
-    for (const [type, ch] of channels.entries()) {
-      try { if (ch && !ch.closed) await ch.close(); } catch (err) {
-        console.error(`[RabbitMQ] Error closing channel (${type}):`, err.message);
+    for (const [type, state] of channels.entries()) {
+      if (state && !state.closed) {
+        try { await state.ch.close(); } catch (err) {
+          console.warn(`[RabbitMQ] Error closing channel (${type}):`, err.message);
+        }
       }
     }
     channels.clear();
 
-    if (publisherChannel && !publisherChannel.closed) {
+    if (publisherChannel && !publisherClosed) {
       try { await publisherChannel.close(); } catch (err) {
-        console.error('[RabbitMQ] Error closing publisher channel:', err.message);
+        console.warn('[RabbitMQ] Error closing publisher channel:', err.message);
       }
     }
     publisherChannel = null;
+    publisherClosed  = false;
 
     if (connection && isConnected) {
       try { await connection.close(); } catch (err) {
-        console.error('[RabbitMQ] Error closing connection:', err.message);
+        console.warn('[RabbitMQ] Error closing connection:', err.message);
       }
     }
-    connection = null;
-    isConnected = false;
+    connection        = null;
+    isConnected       = false;
+    reconnectAttempts = 0;
     console.info('[RabbitMQ] Disconnected');
   }
 }

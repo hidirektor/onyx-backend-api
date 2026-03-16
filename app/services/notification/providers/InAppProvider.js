@@ -21,7 +21,7 @@ class InAppProvider {
     if (!userId) throw new Error('[InAppProvider] userId is required');
 
     // Lazy-load to avoid circular dependency during bootstrap
-    const WebSocketServer = require('@core/infrastructure/WebSocketServer');
+    const WebSocketServer = require('@core/infrastructure/setup/websocket/websocket.server');
 
     try {
       WebSocketServer.emit(`user:${userId}`, event, {

@@ -2,7 +2,7 @@
 
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const appConfig = require('@infrastructure/setup/configs/app.config');
+const appConfig = require('@infrastructure/configs/app.config');
 
 const SALT_ROUNDS = 12;
 

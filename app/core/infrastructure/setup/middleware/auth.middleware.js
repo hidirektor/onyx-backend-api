@@ -2,7 +2,7 @@
 
 const jwt = require('jsonwebtoken');
 const { StatusCodes } = require('http-status-codes');
-const appConfig = require('@infrastructure/setup/configs/app.config');
+const appConfig = require('@infrastructure/configs/app.config');
 
 function deny(res, statusCode, message) {
   return res.status(statusCode).json({

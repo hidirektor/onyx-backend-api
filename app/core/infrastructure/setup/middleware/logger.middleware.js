@@ -10,18 +10,22 @@ module.exports = (req, res, next) => {
   const startAt = process.hrtime.bigint();
 
   res.on('finish', () => {
-    const durationNs = process.hrtime.bigint() - startAt;
-    const durationMs = Number(durationNs / BigInt(1_000_000));
+    try {
+      const durationNs = process.hrtime.bigint() - startAt;
+      const durationMs = Number(durationNs / BigInt(1_000_000));
 
-    logger.http(`${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`, {
-      method: req.method,
-      url: req.originalUrl,
-      status: res.statusCode,
-      duration: `${durationMs}ms`,
-      ip: req.ip || req.connection?.remoteAddress,
-      userAgent: req.get('user-agent'),
-      userId: req.user?.id || null,
-    });
+      logger.http(`${req.method} ${req.originalUrl} ${res.statusCode} ${durationMs}ms`, {
+        method:    req.method,
+        url:       req.originalUrl,
+        status:    res.statusCode,
+        duration:  `${durationMs}ms`,
+        ip:        req.ip || req.socket?.remoteAddress,
+        userAgent: req.get('user-agent'),
+        userId:    req.user?.id || null,
+      });
+    } catch {
+      // Never crash the process from a logging error
+    }
   });
 
   next();
