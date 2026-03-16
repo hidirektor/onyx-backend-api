@@ -1,0 +1,15 @@
+services:
+
+  api:
+    build: .
+    container_name: onyx-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-2805}:2805"
+    env_file: .env
+    networks:
+      - onyx_network
+
+networks:
+  onyx_network:
+    driver: bridge

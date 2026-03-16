@@ -1,0 +1,31 @@
+# Dependencies
+node_modules
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+
+# Dev & test
+.git
+.gitignore
+coverage
+**/*.test.js
+**/*.spec.js
+
+# Editor
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+readme
+README.md
