@@ -2,66 +2,75 @@
 
 const { DataTypes } = require('sequelize');
 const BaseModel = require('@core/domain/models/BaseModel');
+const { getEnumValues } = require('@core/domain/enums');
 
 module.exports = (sequelize) => {
   class SupportTicket extends BaseModel {
     static associate(db) {
-      SupportTicket.belongsTo(db.User,                { foreignKey: 'userId',         targetKey: 'userId', as: 'owner' });
-      SupportTicket.hasMany(db.SupportTicketResponse, { foreignKey: 'supportTicketId', as: 'responses' });
+      SupportTicket.belongsTo(db.User, { foreignKey: 'userID',    targetKey: 'userID', as: 'owner' });
+      SupportTicket.belongsTo(db.User, { foreignKey: 'studentID', targetKey: 'userID', as: 'student' });
+      SupportTicket.hasMany(db.SupportTicketResponse, { foreignKey: 'ticketID', as: 'responses' });
     }
   }
 
   SupportTicket.init(
     {
-      supportTicketId: {
+      ticketID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      userId: {
+      userID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.userId (ticket creator)',
+        comment: 'FK → users.userID (ticket creator)',
       },
-      subject: {
-        type: DataTypes.STRING(255),
+      studentID: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        comment: 'FK → users.userID (student) - only academician can set',
+      },
+      ticketAttachment: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Attachments related to the ticket',
+      },
+      ticketCategory: {
+        type: DataTypes.ENUM(...getEnumValues('support.ticketCategories')),
         allowNull: false,
+        comment: 'Category of the support ticket',
       },
-      description: {
+      ticketMessage: {
         type: DataTypes.TEXT,
         allowNull: false,
+        comment: 'Detailed message of the support ticket',
       },
-      status: {
-        type: DataTypes.ENUM('open', 'in_progress', 'waiting_reply', 'resolved', 'closed'),
+      ticketStatus: {
+        type: DataTypes.ENUM(...getEnumValues('support.ticketStatuses')),
         allowNull: false,
-        defaultValue: 'open',
+        comment: 'Current status of the ticket',
       },
-      priority: {
-        type: DataTypes.ENUM('low', 'medium', 'high', 'critical'),
+      ticketTime: {
+        type: DataTypes.BIGINT,
         allowNull: false,
-        defaultValue: 'medium',
+        comment: 'Timestamp of ticket creation',
       },
-      category: {
-        type: DataTypes.STRING(100),
-        allowNull: true,
-        comment: 'Optional ticket category / department tag',
-      },
-      closedAt: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'Timestamp when ticket was closed or auto-closed',
+      ticketTitle: {
+        type: DataTypes.STRING(255),
+        allowNull: false,
+        comment: 'Title of the support ticket',
       },
     },
     {
       sequelize,
       modelName: 'SupportTicket',
       tableName: 'support_tickets',
-      timestamps: true,
+      timestamps: false,
       indexes: [
-        { fields: ['userId'] },
-        { fields: ['status'] },
-        { fields: ['priority'] },
-        { fields: ['createdAt'] },
+        { name: 'idx_support_tickets_user_status', fields: ['userID', 'ticketStatus'] },
+        { name: 'idx_support_tickets_status',      fields: ['ticketStatus'] },
+        { name: 'idx_support_tickets_user',        fields: ['userID'] },
+        { name: 'idx_support_tickets_student',     fields: ['studentID'] },
       ],
     }
   );

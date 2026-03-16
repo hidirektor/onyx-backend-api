@@ -7,16 +7,38 @@ const { getEnumValues, getEnumDefault } = require('@core/domain/enums');
 module.exports = (sequelize) => {
   class AuditLog extends BaseModel {
     static associate(db) {
-      AuditLog.belongsTo(db.User, { foreignKey: 'performedBy', targetKey: 'userId', as: 'actor' });
+      AuditLog.belongsTo(db.User, { foreignKey: 'performedBy', targetKey: 'userID', as: 'actor' });
     }
   }
 
   AuditLog.init(
     {
-      auditLogId: {
+      recordID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
+      },
+      newData: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'New data after the operation',
+      },
+      operationDescription: {
+        type: DataTypes.STRING(500),
+        allowNull: false,
+        comment: 'Description of the operation',
+      },
+      operationSection: {
+        type: DataTypes.ENUM(...getEnumValues('audit.operationSections')),
+        allowNull: false,
+        defaultValue: getEnumDefault('audit.operationSections', 'AUTHENTICATION'),
+        comment: 'Section affected by the operation',
+      },
+      operationTime: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        defaultValue: () => Date.now(),
+        comment: 'Timestamp of the operation',
       },
       operationType: {
         type: DataTypes.ENUM(...getEnumValues('audit.operationTypes')),
@@ -24,47 +46,10 @@ module.exports = (sequelize) => {
         defaultValue: getEnumDefault('audit.operationTypes', 'CREATE'),
         comment: 'Type of operation performed',
       },
-      operationSection: {
-        type: DataTypes.ENUM(...getEnumValues('audit.operationSections')),
-        allowNull: false,
-        defaultValue: getEnumDefault('audit.operationSections', 'AUTHENTICATION'),
-        comment: 'System section affected by the operation',
-      },
       performedBy: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.userId (actor)',
-      },
-      targetResourceId: {
-        type: DataTypes.STRING(100),
-        allowNull: true,
-        comment: 'ID of the resource affected (optional)',
-      },
-      newData: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-        comment: 'JSON snapshot of new state after operation',
-      },
-      operationDescription: {
-        type: DataTypes.STRING(500),
-        allowNull: false,
-        comment: 'Human-readable description of the operation',
-      },
-      ipAddress: {
-        type: DataTypes.STRING(45),
-        allowNull: true,
-        comment: 'IP address of the request',
-      },
-      deviceType: {
-        type: DataTypes.STRING(20),
-        allowNull: true,
-        comment: 'Device type from X-Device-Type header',
-      },
-      operationTime: {
-        type: DataTypes.BIGINT,
-        allowNull: false,
-        defaultValue: () => Date.now(),
-        comment: 'Unix timestamp (ms) of the operation',
+        comment: 'FK → users.userID',
       },
     },
     {
@@ -73,9 +58,8 @@ module.exports = (sequelize) => {
       tableName: 'audit_logs',
       timestamps: false,
       indexes: [
-        { name: 'idx_audit_logs_actor_time',  fields: ['performedBy', 'operationTime'] },
-        { name: 'idx_audit_logs_section',     fields: ['operationSection', 'operationTime'] },
-        { name: 'idx_audit_logs_type',        fields: ['operationType', 'operationTime'] },
+        { name: 'idx_audit_logs_user_time', fields: ['performedBy', 'operationTime'] },
+        { name: 'idx_audit_logs_section',   fields: ['operationSection', 'operationTime'] },
       ],
     }
   );

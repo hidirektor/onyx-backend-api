@@ -2,26 +2,36 @@
 
 const { DataTypes } = require('sequelize');
 const BaseModel = require('@core/domain/models/BaseModel');
-const { getEnumValues } = require('@core/domain/enums');
 
 module.exports = (sequelize) => {
   class UserDevice extends BaseModel {
     static associate(db) {
-      UserDevice.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'userId', as: 'user' });
+      UserDevice.belongsTo(db.User, { foreignKey: 'userID', targetKey: 'userID', as: 'user' });
     }
   }
 
   UserDevice.init(
     {
-      userDeviceId: {
+      userDeviceID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
+        unique: true,
       },
-      userId: {
+      userID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.userId',
+        comment: 'FK → users.userID',
+      },
+      browserInfo: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Browser and OS information',
+      },
+      clientInfo: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Client app/device information (mobile/web/api)',
       },
       deviceFingerprint: {
         type: DataTypes.STRING(255),
@@ -31,100 +41,88 @@ module.exports = (sequelize) => {
       deviceName: {
         type: DataTypes.STRING(255),
         allowNull: true,
-        comment: 'Human-readable device name (e.g. iPhone 13, Chrome on Windows)',
+        comment: 'Device name (e.g., iPhone 13, Chrome on Windows)',
       },
       deviceType: {
-        type: DataTypes.ENUM(...getEnumValues('request.deviceTypes')),
-        allowNull: false,
-        defaultValue: 'web',
-        comment: 'Client type: web | mobile | agent',
-      },
-      browserInfo: {
-        type: DataTypes.JSON,
+        type: DataTypes.STRING(20),
         allowNull: true,
-        comment: 'Browser and OS metadata',
-      },
-      clientInfo: {
-        type: DataTypes.JSON,
-        allowNull: true,
-        comment: 'App/device metadata (version, platform, etc.)',
-      },
-      ipAddress: {
-        type: DataTypes.STRING(45),
-        allowNull: true,
-        comment: 'IPv4 or IPv6 address at time of login',
-      },
-      location: {
-        type: DataTypes.JSON,
-        allowNull: true,
-        comment: 'Geo-IP location data (country, city, coordinates)',
+        defaultValue: 'unknown',
+        comment: 'Client type: web, mobile, api, or unknown',
       },
       firstLoginAt: {
         type: DataTypes.DATE,
         allowNull: false,
-        defaultValue: DataTypes.NOW,
-        comment: 'First login timestamp for this device',
+        comment: 'First time this user-device was used',
       },
-      lastLoginAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        comment: 'Most recent login timestamp',
-      },
-      isTrusted: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        comment: 'Whether the user has marked this device as trusted',
-      },
-      isConfirmed: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        comment: 'Whether this device was confirmed via OTP',
-      },
-      trustedAt: {
-        type: DataTypes.DATE,
+      ipAddress: {
+        type: DataTypes.STRING(45),
         allowNull: true,
-        comment: 'Timestamp when device was marked trusted',
+        comment: 'IP address during login',
       },
       isActive: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
-        comment: 'Whether this device record is active',
+        comment: 'Whether this device is still active',
+      },
+      isConfirmed: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'Whether this device has been confirmed by the user',
+      },
+      isTrusted: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'Whether user marked this device as trusted',
+      },
+      lastLoginAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        comment: 'Last time this user-device was used',
+      },
+      lastSuspiciousAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Last time suspicious activity was detected',
+      },
+      location: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Geographic location data',
       },
       loginCount: {
-        type: DataTypes.INTEGER.UNSIGNED,
+        type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 1,
-        comment: 'Total login count from this device',
+        comment: 'Number of times logged in from this device',
       },
       networkFingerprint: {
         type: DataTypes.STRING(255),
         allowNull: true,
-        comment: 'IP-aware network fingerprint',
+        comment: 'Network-aware device fingerprint (includes IP)',
       },
       requestMetadata: {
         type: DataTypes.JSON,
         allowNull: true,
-        comment: 'Raw request headers and metadata',
+        comment: 'Additional request metadata and headers',
+      },
+      securityRisk: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        comment: 'Security risk assessment data',
       },
       suspiciousActivity: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
-        comment: 'Flagged for suspicious activity',
+        comment: 'Whether suspicious activity was detected',
       },
-      lastSuspiciousAt: {
+      trustedAt: {
         type: DataTypes.DATE,
         allowNull: true,
-        comment: 'Last suspicious activity timestamp',
-      },
-      securityRisk: {
-        type: DataTypes.JSON,
-        allowNull: true,
-        comment: 'Security risk assessment payload (VPN, proxy, geo flags)',
+        comment: 'When this device was marked as trusted',
       },
     },
     {
@@ -133,10 +131,10 @@ module.exports = (sequelize) => {
       tableName: 'user_devices',
       timestamps: false,
       indexes: [
-        { name: 'idx_user_device_unique',  unique: true, fields: ['userId', 'deviceFingerprint'] },
-        { name: 'idx_user_device_login',   fields: ['userId', 'lastLoginAt'] },
-        { name: 'idx_device_fingerprint',  fields: ['deviceFingerprint'] },
-        { name: 'idx_user_devices_active', fields: ['userId', 'isActive', 'lastLoginAt'] },
+        { name: 'idx_user_device_unique',   unique: true, fields: ['userID', 'deviceFingerprint'] },
+        { name: 'idx_user_device_login',    fields: ['userID', 'lastLoginAt'] },
+        { name: 'idx_device_fingerprint',   fields: ['deviceFingerprint'] },
+        { name: 'idx_user_devices_active',  fields: ['userID', 'isActive', 'lastLoginAt'] },
       ],
     }
   );

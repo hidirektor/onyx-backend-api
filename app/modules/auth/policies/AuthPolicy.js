@@ -16,15 +16,17 @@ class AuthPolicy extends BasePolicy {
 
   async updateOwnProfile(user, req) {
     if (!user) return false;
-    return user.id === parseInt(req.params.id, 10);
+    return user.userID === req.params.id;
   }
 
   async viewAllUsers(user) {
-    return user?.role === 'admin';
+    const userType = user?.userType;
+    return userType === 'SYSOP' || userType === 'ADMIN';
   }
 
   async deactivateUser(user) {
-    return user?.role === 'admin';
+    const userType = user?.userType;
+    return userType === 'SYSOP' || userType === 'ADMIN';
   }
 }
 

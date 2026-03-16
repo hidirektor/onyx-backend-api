@@ -6,47 +6,55 @@ const BaseModel = require('@core/domain/models/BaseModel');
 module.exports = (sequelize) => {
   class UserNotification extends BaseModel {
     static associate(db) {
-      UserNotification.belongsTo(db.User,         { foreignKey: 'userId',         targetKey: 'userId',       as: 'user' });
-      UserNotification.belongsTo(db.Notification, { foreignKey: 'notificationId', targetKey: 'notificationId', as: 'notification' });
+      UserNotification.belongsTo(db.User,         { foreignKey: 'userID',         targetKey: 'userID',         as: 'user' });
+      UserNotification.belongsTo(db.Notification, { foreignKey: 'notificationID', targetKey: 'notificationID', as: 'notification' });
     }
   }
 
   UserNotification.init(
     {
-      userNotificationId: {
+      userNotificationID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      userId: {
+      userID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.userId',
+        comment: 'FK → users.userID',
       },
-      notificationId: {
+      notificationID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → notifications.notificationId',
+        comment: 'FK → notifications.notificationID',
       },
       isRead: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+        comment: 'Indicates if notification was read',
       },
-      readAt: {
-        type: DataTypes.DATE,
+      readTime: {
+        type: DataTypes.BIGINT,
         allowNull: true,
-        comment: 'Timestamp when the user read the notification',
+        defaultValue: null,
+        comment: 'Timestamp when notification was read',
+      },
+      sentDate: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        comment: 'Timestamp when notification was sent',
       },
     },
     {
       sequelize,
       modelName: 'UserNotification',
       tableName: 'user_notifications',
-      timestamps: true,
+      timestamps: false,
       indexes: [
-        { name: 'idx_user_notif_unique',  unique: true, fields: ['userId', 'notificationId'] },
-        { name: 'idx_user_notif_unread',  fields: ['userId', 'isRead'] },
+        { name: 'idx_user_notifications_user_read', fields: ['userID', 'isRead'] },
+        { name: 'idx_user_notifications_user',      fields: ['userID'] },
+        { name: 'idx_user_notifications_notification', fields: ['notificationID'] },
       ],
     }
   );

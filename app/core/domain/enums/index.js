@@ -14,12 +14,16 @@ const ALL_ENUMS = Object.assign(
   {},
   require('./user/preferences.enum'),
   require('./user/users.enum'),
+  require('./user/profile-photo-approvals.enum'),
   require('./system/audit/operation-types.enum'),
   require('./system/audit/operation-sections.enum'),
   require('./system/request/language.enum'),
   require('./system/request/device-type.enum'),
+  require('./system/notifications.enum'),
+  require('./support/support.enum'),
+  require('./geo/geo-restrictions.enum'),
   // Timezones and dial codes are arrays, not key-mapped — access directly:
-  // require('./user/timezones.enum')         → plain array
+  // require('./user/timezones.enum')         → plain object (use Object.values())
   // require('./user/phone-dial-codes.enum')  → plain array
 );
 

@@ -10,50 +10,46 @@ module.exports = (sequelize) => {
 
   SystemSettings.init(
     {
-      systemSettingsId: {
+      settingsID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-      },
-      // ─── Access Control ────────────────────────────────────────────────────
-      geoRestrictionEnabled: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        comment: 'Enforce country whitelist/blacklist on all requests',
-      },
-      newDeviceProtectionEnabled: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        comment: 'Require OTP verification for unrecognized devices',
-      },
-      // ─── Session ──────────────────────────────────────────────────────────
-      defaultSessionDuration: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        defaultValue: 60,
-        comment: 'Default session duration in minutes',
       },
       afkThresholdSeconds: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 600,
-        comment: 'Seconds of inactivity before user is considered AFK',
+        comment: 'AFK threshold in seconds (user is considered AFK after this many seconds of inactivity)',
       },
-      // ─── Support ──────────────────────────────────────────────────────────
-      ticketClosingTime: {
+      defaultSessionDuration: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        defaultValue: 2,
-        comment: 'Days before a support ticket auto-closes after last response',
+        defaultValue: 3,
+        comment: 'Default roll call session duration in minutes',
       },
-      // ─── Profile ──────────────────────────────────────────────────────────
+      geoRestrictionEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+        comment: 'Geo restriction enabled (true: only accept requests from Turkey, false: accept from anywhere)',
+      },
+      newDeviceProtectionEnabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'New device protection enabled (true: require OTP verification for new devices, false: allow all devices without verification)',
+      },
       profilePhotoApprovalEnabled: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
-        comment: 'Require admin approval for profile photo uploads',
+        comment: 'Require approval for student profile photo uploads',
+      },
+      ticketClosingTime: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 2,
+        comment: 'Days before ticket auto-closes',
       },
     },
     {

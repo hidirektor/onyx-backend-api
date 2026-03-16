@@ -6,53 +6,49 @@ const BaseModel = require('@core/domain/models/BaseModel');
 module.exports = (sequelize) => {
   class SupportTicketResponse extends BaseModel {
     static associate(db) {
-      SupportTicketResponse.belongsTo(db.SupportTicket, { foreignKey: 'supportTicketId', targetKey: 'supportTicketId', as: 'ticket' });
-      SupportTicketResponse.belongsTo(db.User,          { foreignKey: 'respondedBy',     targetKey: 'userId',          as: 'responder' });
+      SupportTicketResponse.belongsTo(db.SupportTicket, { foreignKey: 'ticketID', targetKey: 'ticketID', as: 'ticket' });
+      SupportTicketResponse.belongsTo(db.User,          { foreignKey: 'userID',   targetKey: 'userID',   as: 'responder' });
     }
   }
 
   SupportTicketResponse.init(
     {
-      supportTicketResponseId: {
+      responseID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      supportTicketId: {
+      ticketID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → support_tickets.supportTicketId',
+        comment: 'FK → support_tickets.ticketID',
       },
-      respondedBy: {
+      userID: {
         type: DataTypes.UUID,
         allowNull: false,
-        comment: 'FK → users.userId',
+        comment: 'FK → users.userID',
       },
-      message: {
-        type: DataTypes.TEXT,
-        allowNull: false,
-      },
-      isStaffResponse: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        comment: 'True when the responder is an admin/staff member',
-      },
-      attachments: {
+      responseAttachment: {
         type: DataTypes.JSON,
         allowNull: true,
-        comment: 'Array of attachment URLs or metadata',
+        comment: 'Attachments related to the response',
+      },
+      responseMessage: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        comment: 'Response message content',
+      },
+      responseTime: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        comment: 'Timestamp of the response',
       },
     },
     {
       sequelize,
       modelName: 'SupportTicketResponse',
       tableName: 'support_ticket_responses',
-      timestamps: true,
-      indexes: [
-        { fields: ['supportTicketId'] },
-        { fields: ['respondedBy'] },
-      ],
+      timestamps: false,
     }
   );
 

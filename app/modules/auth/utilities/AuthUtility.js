@@ -11,24 +11,10 @@ const SALT_ROUNDS = 12;
  * Handles registration, login, token generation/verification, and password hashing.
  */
 class AuthUtility {
-  async registerUser({ name, email, password }) {
+  async loginUser(eMail, password) {
     const { User } = require('@database/models');
 
-    const existing = await User.findOne({ where: { email } });
-    if (existing) {
-      const err = new Error('An account with this email already exists');
-      err.statusCode = 409;
-      throw err;
-    }
-
-    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-    return User.create({ name, email, password: hashedPassword });
-  }
-
-  async loginUser(email, password) {
-    const { User } = require('@database/models');
-
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ where: { eMail } });
     if (!user) {
       const err = new Error('Invalid email or password');
       err.statusCode = 401;
@@ -41,6 +27,12 @@ class AuthUtility {
       throw err;
     }
 
+    if (!user.password) {
+      const err = new Error('Password authentication is not available for this account');
+      err.statusCode = 401;
+      throw err;
+    }
+
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       const err = new Error('Invalid email or password');
@@ -48,9 +40,7 @@ class AuthUtility {
       throw err;
     }
 
-    await user.update({ lastLoginAt: new Date() });
-
-    const token = this.generateToken({ id: user.id, email: user.email, role: user.role });
+    const token = this.generateToken({ id: user.userID, eMail: user.eMail, userType: user.userType });
 
     return { user, token };
   }

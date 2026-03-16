@@ -24,62 +24,49 @@ function jsonSetter(field) {
 module.exports = (sequelize) => {
   class NotificationPreference extends BaseModel {
     static associate(db) {
-      NotificationPreference.belongsTo(db.User, { foreignKey: 'userId', targetKey: 'userId', as: 'user' });
+      NotificationPreference.belongsTo(db.User, { foreignKey: 'userID', targetKey: 'userID', as: 'user' });
     }
   }
 
   NotificationPreference.init(
     {
-      notificationPreferenceId: {
+      userID: {
         type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-      },
-      userId: {
-        type: DataTypes.UUID,
         allowNull: false,
-        unique: true,
-        comment: 'FK → users.userId',
+        comment: 'FK → users.userID',
       },
       generalNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: '{ sms, inApp, email, push }',
+        comment: 'Preferences for general notifications',
         get: jsonGetter('generalNotifications'),
         set: jsonSetter('generalNotifications'),
       },
-      systemNotifications: {
+      securityNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: 'System / security notification preferences',
-        get: jsonGetter('systemNotifications'),
-        set: jsonSetter('systemNotifications'),
+        comment: 'Preferences for security notifications',
+        get: jsonGetter('securityNotifications'),
+        set: jsonSetter('securityNotifications'),
       },
-      announcementNotifications: {
+      newFeatureNotifications: {
         type: DataTypes.JSON,
         allowNull: false,
         defaultValue: DEFAULT_PREFS,
-        comment: 'Announcement notification preferences',
-        get: jsonGetter('announcementNotifications'),
-        set: jsonSetter('announcementNotifications'),
-      },
-      supportNotifications: {
-        type: DataTypes.JSON,
-        allowNull: false,
-        defaultValue: DEFAULT_PREFS,
-        comment: 'Support ticket notification preferences',
-        get: jsonGetter('supportNotifications'),
-        set: jsonSetter('supportNotifications'),
+        comment: 'Preferences for new features notifications',
+        get: jsonGetter('newFeatureNotifications'),
+        set: jsonSetter('newFeatureNotifications'),
       },
     },
     {
       sequelize,
       modelName: 'NotificationPreference',
-      tableName: 'notification_preferences',
+      tableName: 'user_notification_preferences',
       timestamps: false,
-      indexes: [{ unique: true, fields: ['userId'] }],
+      indexes: [{ unique: true, fields: ['userID'] }],
     }
   );
 

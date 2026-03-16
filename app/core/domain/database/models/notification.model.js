@@ -2,61 +2,64 @@
 
 const { DataTypes } = require('sequelize');
 const BaseModel = require('@core/domain/models/BaseModel');
+const { getEnumValues } = require('@core/domain/enums');
 
 module.exports = (sequelize) => {
   class Notification extends BaseModel {
     static associate(db) {
-      Notification.hasMany(db.UserNotification, { foreignKey: 'notificationId', as: 'userNotifications' });
+      Notification.hasMany(db.UserNotification, { foreignKey: 'notificationID', as: 'userNotifications' });
+      Notification.belongsTo(db.User, { foreignKey: 'performedBy', targetKey: 'userID', as: 'performer' });
     }
   }
 
   Notification.init(
     {
-      notificationId: {
+      notificationID: {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
       },
-      title: {
+      notificationAction: {
         type: DataTypes.STRING(255),
-        allowNull: false,
+        allowNull: true,
+        defaultValue: null,
+        comment: 'Optional action identifier for the notification',
       },
-      body: {
+      notificationContent: {
         type: DataTypes.TEXT,
         allowNull: false,
+        comment: 'Content of the notification',
       },
-      type: {
-        type: DataTypes.ENUM('general', 'system', 'announcement', 'support'),
+      notificationDate: {
+        type: DataTypes.BIGINT,
         allowNull: false,
-        defaultValue: 'general',
-        comment: 'Notification category / channel',
+        comment: 'Timestamp of notification creation',
       },
-      targetRole: {
-        type: DataTypes.ENUM('all', 'admin', 'user'),
+      notificationTitle: {
+        type: DataTypes.STRING(255),
         allowNull: false,
-        defaultValue: 'all',
-        comment: 'Role audience for this notification',
+        comment: 'Title of the notification',
       },
-      data: {
-        type: DataTypes.JSON,
-        allowNull: true,
-        comment: 'Arbitrary payload for deep-link or action handling',
+      notificationType: {
+        type: DataTypes.ENUM(...getEnumValues('system.notifications.types')),
+        allowNull: false,
+        comment: 'Type of notification',
       },
-      sentAt: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        comment: 'When the notification was dispatched',
+      performedBy: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        comment: 'FK → users.userID',
       },
     },
     {
       sequelize,
       modelName: 'Notification',
       tableName: 'notifications',
-      timestamps: true,
+      timestamps: false,
       indexes: [
-        { fields: ['type'] },
-        { fields: ['targetRole'] },
-        { fields: ['createdAt'] },
+        { name: 'idx_notifications_date',      fields: ['notificationDate'] },
+        { name: 'idx_notifications_type',      fields: ['notificationType', 'notificationDate'] },
+        { name: 'idx_notifications_performed_by', fields: ['performedBy'] },
       ],
     }
   );
