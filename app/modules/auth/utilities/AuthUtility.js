@@ -46,7 +46,7 @@ class AuthUtility {
   }
 
   generateToken(payload) {
-    return jwt.sign(payload, appConfig.jwtSecret, { expiresIn: appConfig.jwtExpiresIn });
+    return jwt.sign(payload, appConfig.jwtSecret);
   }
 
   verifyToken(token) {

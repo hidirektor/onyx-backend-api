@@ -15,34 +15,37 @@ const REQUIRED_VARS = [
   'CORS_ORIGIN',
 
   // Database
-  'DB_HOST',
-  'DB_PORT',
-  'DB_NAME',
-  'DB_USER',
-  'DB_PASS',
+  'MYSQL_DB_HOST',
+  'MYSQL_DB_PORT',
+  'MYSQL_DB_NAME',
+  'MYSQL_DB_USERNAME',
+  'MYSQL_DB_PASSWORD',
 
   // Redis
   'REDIS_HOST',
   'REDIS_PORT',
+
+  // RabbitMQ
+  'RABBITMQ_HOST',
+  'RABBITMQ_PORT',
+  'RABBITMQ_USERNAME',
+  'RABBITMQ_PASSWORD',
 
   // MinIO
   'MINIO_ENDPOINT',
   'MINIO_PORT',
   'MINIO_ACCESS_KEY',
   'MINIO_SECRET_KEY',
-  'MINIO_BUCKET',
-
-  // RabbitMQ
-  'RABBITMQ_URL',
+  'MINIO_BUCKET_NAME',
 
   // Mail
-  'MAIL_HOST',
-  'MAIL_PORT',
-  'MAIL_FROM',
+  'RESEND_SMTP_HOST',
+  'RESEND_SMTP_PORT',
+  'RESEND_SMTP_PASS',
+  'RESEND_SMTP_FROM',
 
   // JWT
-  'JWT_SECRET',
-  'JWT_EXPIRES_IN',
+  'JWT_SECRET_KEY',
 ];
 
 function validateEnv() {

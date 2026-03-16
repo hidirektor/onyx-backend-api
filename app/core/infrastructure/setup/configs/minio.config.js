@@ -1,10 +1,10 @@
 'use strict';
 
 module.exports = {
-  endPoint: process.env.MINIO_ENDPOINT,
-  port: parseInt(process.env.MINIO_PORT, 10),
-  useSSL: process.env.MINIO_USE_SSL === 'true',
-  accessKey: process.env.MINIO_ACCESS_KEY,
-  secretKey: process.env.MINIO_SECRET_KEY,
-  defaultBucket: process.env.MINIO_BUCKET,
+  endPoint:      process.env.MINIO_ENDPOINT,
+  port:          parseInt(process.env.MINIO_PORT, 10),
+  useSSL:        process.env.MINIO_USE_SSL === 'true',
+  accessKey:     process.env.MINIO_ACCESS_KEY,
+  secretKey:     process.env.MINIO_SECRET_KEY,
+  defaultBucket: process.env.MINIO_BUCKET_NAME,
 };
