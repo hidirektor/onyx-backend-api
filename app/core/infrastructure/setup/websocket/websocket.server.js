@@ -1,11 +1,12 @@
 'use strict';
 
-const { Server }       = require('socket.io');
+const { Server }        = require('socket.io');
 const { createAdapter } = require('@socket.io/redis-adapter');
-const RedisClient      = require('../redis/redis.client');
-const wsConfig         = require('./websocket.config');
+const RedisClient       = require('../redis/redis.client');
+const wsConfig          = require('./websocket.config');
 
-let io = null;
+let io        = null;
+let subClient = null; // dedicated subscriber — kept for cleanup
 
 /**
  * WebSocketServer - Singleton Socket.IO server with Redis adapter for horizontal scaling.
@@ -13,21 +14,21 @@ let io = null;
  * Must call initialize(httpServer) once at bootstrap before any other calls.
  *
  * Usage:
- *   // At bootstrap:
- *   WebSocketServer.initialize(httpServer);
- *
- *   // In notification service:
+ *   await WebSocketServer.initialize(httpServer);
  *   WebSocketServer.emit(`user:${userId}`, 'notification', data);
  *   WebSocketServer.broadcast('global_event', data);
  */
 class WebSocketServer {
   /**
    * Initialize the Socket.IO server. Must be called once at bootstrap.
+   * Creates a dedicated Redis subscriber via duplicate() + connect() before
+   * attaching the adapter — prevents "Stream isn't writeable" errors.
+   *
    * @param {import('http').Server} httpServer
    * @param {object} [options] - Socket.IO server options (merged with wsConfig)
-   * @returns {import('socket.io').Server}
+   * @returns {Promise<import('socket.io').Server>}
    */
-  static initialize(httpServer, options = {}) {
+  static async initialize(httpServer, options = {}) {
     if (io) return io;
 
     io = new Server(httpServer, {
@@ -37,11 +38,21 @@ class WebSocketServer {
 
     // Attach Redis adapter only when Redis is available
     const pubClient = RedisClient.getInstance();
-    const subClient = pubClient ? RedisClient.getSubscriber() : null;
 
-    if (pubClient && subClient) {
-      io.adapter(createAdapter(pubClient, subClient));
-      console.info('[WebSocket] Server initialized with Redis adapter');
+    if (pubClient) {
+      try {
+        // Duplicate the already-connected publisher so the subscriber
+        // inherits the same config, then explicitly connect it before
+        // handing it to the adapter (required when lazyConnect: true).
+        subClient = pubClient.duplicate();
+        await subClient.connect();
+
+        io.adapter(createAdapter(pubClient, subClient));
+        console.info('[WebSocket] Server initialized with Redis adapter');
+      } catch (err) {
+        console.warn('[WebSocket] Redis adapter setup failed — running single-node:', err.message);
+        subClient = null;
+      }
     } else {
       console.warn('[WebSocket] Redis not available — running without Redis adapter (single-node only)');
     }
@@ -49,7 +60,6 @@ class WebSocketServer {
     io.on('connection', (socket) => {
       console.info(`[WebSocket] Client connected: ${socket.id}`);
 
-      // Join user-specific room if userId is provided during handshake
       const userId = socket.handshake.auth?.userId;
       if (userId) {
         socket.join(`user:${userId}`);
@@ -85,7 +95,6 @@ class WebSocketServer {
   }
 
   /**
-   * Get the initialized Socket.IO server instance.
    * @returns {import('socket.io').Server}
    * @throws {Error} if not initialized
    */
@@ -98,7 +107,7 @@ class WebSocketServer {
 
   /**
    * Emit an event to all clients in a room.
-   * @param {string} room - e.g. 'user:42', 'class:101'
+   * @param {string} room - e.g. 'user:42'
    * @param {string} event
    * @param {*}      payload
    */
@@ -115,18 +124,12 @@ class WebSocketServer {
     WebSocketServer.getInstance().emit(event, payload);
   }
 
-  /**
-   * Get the number of connected clients.
-   * @returns {number}
-   */
+  /** @returns {number} */
   static getClientCount() {
     return io ? io.sockets.sockets.size : 0;
   }
 
-  /**
-   * Health check.
-   * @returns {{ status: string, service: string, clients?: number }}
-   */
+  /** @returns {{ status: string, service: string, clients?: number }} */
   static getHealth() {
     if (!io) return { status: 'unavailable', service: 'websocket' };
     return {
@@ -137,11 +140,11 @@ class WebSocketServer {
   }
 
   /**
-   * Gracefully close the Socket.IO server.
+   * Gracefully close the Socket.IO server and the subscriber connection.
    * @returns {Promise<void>}
    */
-  static close() {
-    return new Promise((resolve) => {
+  static async close() {
+    await new Promise((resolve) => {
       if (!io) return resolve();
       io.close(() => {
         io = null;
@@ -149,6 +152,11 @@ class WebSocketServer {
         resolve();
       });
     });
+
+    if (subClient) {
+      await subClient.quit().catch(() => {});
+      subClient = null;
+    }
   }
 }
 

@@ -6,16 +6,37 @@ const MinioClient     = require('../setup/storage/MinioClient');
 const WebSocketServer = require('../setup/websocket/websocket.server');
 const minioConfig     = require('../configs/minio.config');
 
-const DEFAULT_INIT_TIMEOUT_MS = 30000;
+const { InitializationError, ShutdownError } = require('./errors');
+const { withRetry, withTimeout }              = require('./retry');
+
+// ─── Tunables ──────────────────────────────────────────────────────────────────
+const INIT_TIMEOUT_MS   = 30000;
+const IS_PRODUCTION     = process.env.NODE_ENV === 'production';
 
 /**
- * ConnectionManager - Centralized infrastructure connection lifecycle manager.
+ * Per-service retry policy.
+ * Critical services (database, Redis, RabbitMQ) get more attempts.
+ * Infrastructure services (MinIO, WebSocket) get fewer.
+ */
+const RETRY_POLICY = {
+  database:  { attempts: 5, baseDelay: 1000, maxDelay: 20000 },
+  redis:     { attempts: 5, baseDelay: 500,  maxDelay: 10000 },
+  rabbitmq:  { attempts: 5, baseDelay: 1000, maxDelay: 20000 },
+  minio:     { attempts: 3, baseDelay: 1000, maxDelay: 10000 },
+  websocket: { attempts: 2, baseDelay: 500,  maxDelay: 5000  },
+};
+
+/**
+ * ConnectionManager — Centralized infrastructure lifecycle manager.
  *
- * Tracks initialization state per service to prevent duplicate connections.
- * Each step is wrapped with a timeout to prevent hanging indefinitely.
- * Called sequentially during bootstrap to bring up all external dependencies.
+ * Guarantees:
+ * - Each service is initialized exactly once (idempotent).
+ * - Every initialization step has a hard timeout.
+ * - Every initialization step retries on failure (exponential backoff with jitter).
+ * - In production, any service that exhausts all retry attempts throws
+ *   `InitializationError`, which propagates to bootstrap and exits the process.
  *
- * Usage in server.js:
+ * Usage:
  *   const manager = new ConnectionManager();
  *   await manager.initializeAll(httpServer);
  *   const health = await manager.health();
@@ -23,38 +44,56 @@ const DEFAULT_INIT_TIMEOUT_MS = 30000;
  */
 class ConnectionManager {
   constructor() {
-    this._initialized   = new Map();
-    this._pubSubClients = new Map(); // label → { pubClient, subClient }
+    this._initialized   = new Map(); // service → true
+    this._pubSubClients = new Map(); // label  → { pubClient, subClient }
   }
 
-  _mark(key) { this._initialized.set(key, true); }
-  _is(key)   { return this._initialized.get(key) === true; }
+  _mark(key)  { this._initialized.set(key, true); }
+  _ready(key) { return this._initialized.get(key) === true; }
+
+  // ─── Internal helpers ────────────────────────────────────────────────────────
 
   /**
-   * Wraps a promise with a timeout. Throws if the promise doesn't resolve in time.
-   * @param {string}  label
-   * @param {Promise} promise
-   * @param {number}  [ms]
+   * Wrap a service initialization call in retry + timeout.
+   * Converts any error to `InitializationError` with the service name.
+   *
+   * @param {string}         service
+   * @param {() => Promise}  fn
    */
-  async _withTimeout(label, promise, ms = DEFAULT_INIT_TIMEOUT_MS) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`[ConnectionManager] "${label}" initialization timed out after ${ms}ms`)),
-        ms
-      );
-    });
+  async _init(service, fn) {
+    const policy = RETRY_POLICY[service] ?? { attempts: 3, baseDelay: 500, maxDelay: 10000 };
+
     try {
-      return await Promise.race([promise, timeout]);
-    } finally {
-      clearTimeout(timer);
+      await withRetry(
+        () => withTimeout(service, fn(), INIT_TIMEOUT_MS),
+        {
+          label:    service,
+          ...policy,
+          onRetry:  (attempt, err) => {
+            console.warn(`[ConnectionManager] ${service} retry ${attempt}: ${err.message}`);
+          },
+        }
+      );
+    } catch (err) {
+      const wrapped = new InitializationError(service, err.message, { cause: err });
+
+      if (IS_PRODUCTION) {
+        // Fatal in production — surface immediately so bootstrap exits cleanly.
+        throw wrapped;
+      }
+
+      // In non-production, log and continue so the server can still start
+      // without every external service running locally.
+      console.error(`[ConnectionManager] ${service} failed — continuing in non-production mode:`, err.message);
     }
   }
 
-  async initializeDatabase() {
-    if (this._is('database')) return;
+  // ─── Service initializers ────────────────────────────────────────────────────
 
-    await this._withTimeout('database', (async () => {
+  async initializeDatabase() {
+    if (this._ready('database')) return;
+
+    await this._init('database', async () => {
       const dbConfig = require('@infrastructure/configs/database.config');
       const mysql2   = require('mysql2/promise');
 
@@ -71,54 +110,65 @@ class ConnectionManager {
       } finally {
         await conn.end();
       }
-      console.info(`[ConnectionManager] Database "${dbConfig.database}" ensured`);
 
       const { sequelize } = require('@database/models');
       await sequelize.authenticate();
-      console.info('[ConnectionManager] MySQL connected');
-    })());
+      console.info(`[ConnectionManager] Database "${dbConfig.database}" ready`);
+    });
 
     this._mark('database');
   }
 
   async initializeRedis() {
-    if (this._is('redis')) return;
-    await this._withTimeout('redis', RedisClient.initialize());
-    console.info('[ConnectionManager] Redis connected');
+    if (this._ready('redis')) return;
+
+    await this._init('redis', async () => {
+      await RedisClient.initialize();
+      console.info('[ConnectionManager] Redis ready');
+    });
+
     this._mark('redis');
   }
 
   async initializeRabbitMQ() {
-    if (this._is('rabbitmq')) return;
-    await this._withTimeout('rabbitmq', (async () => {
+    if (this._ready('rabbitmq')) return;
+
+    await this._init('rabbitmq', async () => {
       await RabbitMQClient.connect();
       await RabbitMQClient.setupInfrastructure();
-    })());
-    console.info('[ConnectionManager] RabbitMQ connected');
+      console.info('[ConnectionManager] RabbitMQ ready');
+    });
+
     this._mark('rabbitmq');
   }
 
   async initializeMinIO() {
-    if (this._is('minio')) return;
-    await this._withTimeout('minio', (async () => {
+    if (this._ready('minio')) return;
+
+    await this._init('minio', async () => {
       await MinioClient.initialize();
       if (minioConfig.defaultBucket) {
         await MinioClient.ensureBucket(minioConfig.defaultBucket);
       }
-    })());
-    console.info('[ConnectionManager] MinIO ready');
+      console.info('[ConnectionManager] MinIO ready');
+    });
+
     this._mark('minio');
   }
 
   async initializeWebSocket(httpServer) {
-    if (this._is('websocket')) return;
-    WebSocketServer.initialize(httpServer);
-    console.info('[ConnectionManager] WebSocket initialized');
+    if (this._ready('websocket')) return;
+
+    await this._init('websocket', async () => {
+      await WebSocketServer.initialize(httpServer);
+      console.info('[ConnectionManager] WebSocket ready');
+    });
+
     this._mark('websocket');
   }
 
   /**
-   * Initialize all services in the correct dependency order.
+   * Initialize all services in dependency order.
    * @param {import('http').Server} httpServer
    */
   async initializeAll(httpServer) {
@@ -129,32 +179,31 @@ class ConnectionManager {
     await this.initializeWebSocket(httpServer);
   }
 
+  // ─── Pub/Sub ─────────────────────────────────────────────────────────────────
+
   /**
    * Get or create a dedicated pub/sub Redis client pair by label.
-   * Useful for WebSocket or channel-based subscriptions that must not
-   * share a connection with regular command traffic.
-   *
    * @param {string} [label='default']
-   * @returns {{ pubClient: Redis, subClient: Redis }|null}
+   * @returns {{ pubClient: import('ioredis').Redis, subClient: import('ioredis').Redis }|null}
    */
   getPubSubClients(label = 'default') {
-    if (this._pubSubClients.has(label)) {
-      return this._pubSubClients.get(label);
-    }
+    if (this._pubSubClients.has(label)) return this._pubSubClients.get(label);
 
     const base = RedisClient.getInstance();
     if (!base) return null;
 
-    const pubClient = base.duplicate();
-    const subClient = base.duplicate();
-    const entry     = { pubClient, subClient };
+    const entry = { pubClient: base.duplicate(), subClient: base.duplicate() };
     this._pubSubClients.set(label, entry);
     return entry;
   }
 
+  // ─── Health ──────────────────────────────────────────────────────────────────
+
   /**
-   * Health check for all initialized services.
-   * @returns {Promise<Record<string, {status: string, service: string, error?: string}>>}
+   * Run health checks on all services.
+   * Never throws — every failure is captured as an `unhealthy` entry.
+   *
+   * @returns {Promise<Record<string, { status: string, service: string, error?: string }>>}
    */
   async health() {
     const results = {};
@@ -172,7 +221,7 @@ class ConnectionManager {
     try {
       const pong = await RedisClient.ping();
       results.redis = pong
-        ? { status: 'healthy', service: 'redis' }
+        ? { status: 'healthy',     service: 'redis' }
         : { status: 'unavailable', service: 'redis', error: 'Client not initialized' };
     } catch (err) {
       results.redis = { status: 'unhealthy', service: 'redis', error: err.message };
@@ -198,44 +247,50 @@ class ConnectionManager {
     return results;
   }
 
+  // ─── Shutdown ────────────────────────────────────────────────────────────────
+
   /**
    * Gracefully close all connections in reverse dependency order.
+   * Collects shutdown errors instead of stopping at the first one.
    */
   async shutdownAll() {
-    // WebSocket (stop accepting new connections first)
-    try {
-      await WebSocketServer.close();
-    } catch (err) {
-      console.warn('[ConnectionManager] WebSocket close failed:', err.message);
-    }
+    const errors = [];
 
-    // Pub/Sub Redis clients
+    const attempt = async (label, fn) => {
+      try {
+        await fn();
+      } catch (err) {
+        const e = new ShutdownError(label, err.message, { cause: err });
+        errors.push(e);
+        console.warn(`[ConnectionManager] ${label} shutdown error:`, err.message);
+      }
+    };
+
+    // Reverse dependency order
+    await attempt('websocket', () => WebSocketServer.close());
+
     for (const { pubClient, subClient } of this._pubSubClients.values()) {
-      try { if (pubClient) await pubClient.quit(); } catch { /* ignore */ }
-      try { if (subClient) await subClient.quit(); } catch { /* ignore */ }
+      await attempt('redis:pubsub', async () => {
+        if (pubClient) await pubClient.quit();
+        if (subClient) await subClient.quit();
+      });
     }
     this._pubSubClients.clear();
 
-    // Redis
-    await RedisClient.disconnect().catch((err) =>
-      console.warn('[ConnectionManager] Redis close failed:', err.message)
-    );
-
-    // Database
-    try {
+    await attempt('redis',    () => RedisClient.disconnect());
+    await attempt('database', async () => {
       const { sequelize } = require('@database/models');
       await sequelize.close();
-    } catch (err) {
-      console.warn('[ConnectionManager] Database close failed:', err.message);
-    }
-
-    // RabbitMQ (last — messages might still be in-flight)
-    await RabbitMQClient.disconnect().catch((err) =>
-      console.warn('[ConnectionManager] RabbitMQ close failed:', err.message)
-    );
+    });
+    await attempt('rabbitmq', () => RabbitMQClient.disconnect());
 
     this._initialized.clear();
-    console.info('[ConnectionManager] All connections closed');
+
+    if (errors.length > 0) {
+      console.warn(`[ConnectionManager] Shutdown completed with ${errors.length} error(s)`);
+    } else {
+      console.info('[ConnectionManager] All connections closed cleanly');
+    }
   }
 }
 
